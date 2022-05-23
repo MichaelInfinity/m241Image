@@ -1,0 +1,258 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml2/DTD/xhtml1-strict.dtd">
+<html>
+    <head>
+    <meta charset="utf-8"/>
+	<script language="javascript" src="/js/libs/require/require.js" data-main="/js/login_require" type="text/javascript" ></script>
+    <script language="javascript" src="html/media/custom/lib/js/tools.js" type="text/javascript"></script>
+    <script language="javascript" src="html/media/custom/lib/js/variable.js" type="text/javascript"></script>
+    <script type="text/javascript" src="/plcExchange/availableSystems.js"></script>
+    <script type="text/javascript" src="/plcExchange/availableFormats.js"></script>
+    <script type="text/javascript" src="/plcExchange/availableTypes.js"></script>
+    <script language="javascript" type="text/javascript">	
+        // remove URL fragment
+        if (-1 !== window.top.location.href.indexOf("#")) {
+            // remove fragment as much as it can go without adding an entry in browser history:
+            window.location.replace("#");
+            // slice off the remaining '#' in HTML5: 
+            if (typeof window.history.replaceState == 'function') {
+                history.replaceState({}, '', window.location.href.slice(0, -1));
+            }
+        }
+        // uncomment definition for variable scram_sha if Web Server is using scram-sha for authentication
+        // !WARNING! in Web Server code, uncomment definition for SCRAM_SHA macro
+        //var scram_sha = 1;
+    </script>
+    </head>
+    <body>
+    <!--onload="jPrompt('Type something:', 'Prefilled value', 'Prompt Dialog', function(r) {if( r ) alert('You entered ' + r);});">-->
+        <table width="300" align="center">
+            <tr>
+                <td align="right"> User: </td>
+                <td> <input type="text" size="33" maxlength="32" id="user" value=""/> </td>
+            </tr>
+            <tr>
+                <td align="right"> Password: </td>
+                <td> <input type="password" size="33" maxlength="32" id="password" onkeypress="testKeyPress(event)" /> </td>
+            </tr>
+            <tr>
+                <td colspan="2" align="center"> <input type="button" value="Login"  onclick="loginRequest();" /> </td>
+            </tr>
+        </table>
+         
+        <script language="javascript" type="text/javascript">	
+			function testKeyPress(event) {
+                if (event.key == "Enter") {loginRequest();}
+            }
+			
+			function createXHR(status, onload) {
+				var xhr = new XMLHttpRequest();
+				var handled_statuses;
+				if (Array.isArray(status)) {
+					handled_statuses = status;
+				} else {
+					handled_statuses = [status];
+				}
+				xhr.onload = function(event) {
+					if (-1 < handled_statuses.indexOf(this.status)) {
+						this.xhr_onloadHandler(event);
+					} else if (303 === this.status) {
+						// redirect
+						var newLocation = new URL(this.getResponseHeader('Location'), window.top.location.href);
+						window.top.location.assign(newLocation.href);
+				} else {
+						// display content
+						window.document.open('text/html');
+						window.document.write(this.responseText);
+						window.document.close();
+					}
+				};
+				xhr.xhr_onloadHandler = onload;
+				return xhr;
+            }
+			
+			function checkNotification() {
+				var goLogin = false;
+				var httpReq = createXMLHttpRequest();
+				httpReq.open("GET", "/plcExchange/load/", false);
+				httpReq.setRequestHeader("FilePath", "/usr/Web/useNotification.json");
+				httpReq.setRequestHeader("Content-Type", "text/json");
+				httpReq.setRequestHeader("Cache-Control", "max-age=0,no-cache,no-store");
+				httpReq.send(null);
+				if (httpReq.status == 200) {
+					try {
+						var jsonParse = JSON.parse(httpReq.responseText);
+						if (typeof jsonParse.szUseNotificationMsg == "string" && jsonParse.szUseNotificationMsg.length > 0) {
+							goLogin = window.confirm(decodeURI(jsonParse.szUseNotificationMsg));
+						}
+						else {
+							goLogin = true;
+						}
+					} catch (error) {
+						console.error(error);
+						goLogin = true
+					}
+				}
+				else if (httpReq.status == 401) {
+					window.alert("You are not authorized to perform this operation");
+					window.top.location.reload();
+				} else if (httpReq.status == 410) {
+					window.alert("Your session has expired");
+					window.top.location.reload();
+				} else if (httpReq.status == 406) {
+					goLogin = true;
+				} else {
+					// No notification
+					console.log("httpReq.readyState = " + httpReq.readyState + "httpReq.status = " + httpReq.status);
+                }
+				return goLogin;
+			}
+			
+			
+			function logout() {
+				var xhrLogout = createXMLHttpRequest();
+			
+				xhrLogout.open("POST", "/authentication/logout/", false);
+				xhrLogout.send(null);
+				window.top.location.replace("/");
+			}
+			
+			function onSuccessLogin(responseText) {
+				// get product name
+				var match = /product:([^,:]+)/i.exec(responseText);
+				if (match) {
+					document.title = match[1];                    
+					//window.alert("Product Name = " + match[1]);
+					window.sessionStorage.setItem("PlcProductName", match[1]);
+				}
+				if (checkNotification()) {
+					// go to next page
+					// var newLocation = (new URL("/index2.htm", window.top.location.href)).href; // !!! not supported by IE
+					var newLocation = window.top.location.href.replace(new RegExp( window.top.location.host + ".*"), window.top.location.host + "/index251.htm")
+					window.top.location.assign(newLocation);
+				} else {
+					// log out
+					logout();
+				}
+			}
+
+			function createLoginXHR(authorization_hdr, status, onload) {
+				var req = createXHR(status, function() {
+					var scram_response = this.getResponseHeader('WWW-Authenticate') || this.getResponseHeader('Authentication-Info');
+					this.onloadHandler(scram_response);
+				});
+				req.onloadHandler = onload;
+				req.onerror = function(event) {
+					window.alert("Error while loading page (" + event.target.status + ")");
+					window.top.location.replace("/");
+				};
+				req.open("POST", "/authentication/login/", true);
+				req.setRequestHeader("Authorization", authorization_hdr);
+				return req;
+			}
+
+			function do_scram_sha256(user, password, onSuccess) {
+				var _user = user;
+				var _password = password;
+		
+				require(['http-scram-message-provider', 'node-forge'], function(HTTPSCRAMMessageProvider, forge) {
+					// password is the MD5 of the password
+					var md = forge.md.md5.create();                
+					md.update(_password);
+					var _passwordMD5 = forge.util.hexToBytes(md.digest().toHex());
+		
+					var scram_sha_256 = new HTTPSCRAMMessageProvider("sha256", "Client Key", "Server Key");
+					// CLIENT 1ST MESSAGE
+					var cmsg_1 = scram_sha_256.getClientFirstAuthorizationHeader(_user);
+					//scram_sha_256.show();
+					var xhrLogin_1st_msg = createLoginXHR(cmsg_1, [401, 406, 200], function(scram_response) {
+						if (401 === this.status) {
+							// Expected, continue
+							// CLIENT FINAL MESSAGE
+							var cmsg_f = scram_sha_256.getClientFinalAuthorizationHeader(scram_response, _passwordMD5);
+							//scram_sha_256.show();
+							authentication_info = 'data=' + encodeURIComponent(scram_sha_256.message.clientFinalAuthorizationHeader);
+							sessionStorage.setItem("authentication_info", authentication_info);
+							var xhrLogin_final_msg = createLoginXHR(cmsg_f, [200, 406], function(scram_response) {
+								if (200 === this.status) {
+									// CLIENT VALIDATE SERVER
+									var serverValid = scram_sha_256.validateFinalAuthorizationHeader(scram_response);
+									if (serverValid) {
+										this.scramOnSuccess(this.responseText);
+									} else {
+										window.alert("Login failed.");  
+										logout();
+									}
+								} else if (406 === this.status) {
+									window.alert("Login failed.");
+									window.top.location.reload();
+								}
+							});
+							xhrLogin_final_msg.scramOnSuccess = onSuccess;
+							xhrLogin_final_msg.send(null);
+						} else if (406 === this.status) {
+							var ongoing = /ongoing/i.exec(this.responseText);
+							if (ongoing) {
+								// on going sessions
+								window.alert("Another session is ongoing, cannot login.");
+							} else {
+								// unexpected error
+								window.alert("Login failed (unknown error).");
+							}
+							window.top.location.reload();
+						} else if (200 === this.status) {
+							// redirect
+							var newLocation = window.top.location.href.replace(new RegExp( window.top.location.host + ".*"), window.top.location.host + "/index251.htm");
+							window.top.location.assign(newLocation);
+						}
+                    });
+					xhrLogin_1st_msg.send(null);
+				});
+			}
+			
+			var token = function() {
+				var ret = "";
+				for(i=0;i<32;i++) {
+					ret += (Math.floor(Math.random()*255)).toString(36);
+				}
+				return ret;
+			}
+			
+			function loginRequest() {
+				var user = document.getElementById("user").value;
+				var password = document.getElementById("password").value;
+				if (typeof scram_sha === "undefined")
+				{
+					var xhrLogin = createXMLHttpRequest();
+					xhrLogin.onreadystatechange = function(){
+						if (xhrLogin.readyState == 4) {
+							var resp = xhrLogin.responseText;
+							if (xhrLogin.status == 200) {
+								if (resp == null || resp == ""){
+									window.top.location.replace('index2.htm');
+								}
+								else{
+									document.title = resp;
+									window.top.location.replace('index251.htm');
+								}
+							}
+							else {
+								alert("Bad login/password");
+							}
+						}
+					};
+					authentication_info = token();
+					sessionStorage.setItem("authentication_info", "data="+authentication_info);
+					xhrLogin.open("POST", "/authentication/login/", true);
+					xhrLogin.setRequestHeader("Authorization", encode64(user + ":" + password));
+					xhrLogin.send(null);
+				}
+				else
+				{
+					do_scram_sha256(user, password, onSuccessLogin);
+				}
+            }
+
+        </script>
+    </body>
+</html>
